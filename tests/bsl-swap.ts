@@ -2,13 +2,16 @@ import * as anchor from "@project-serum/anchor";
 import { AnchorProvider, Program } from "@project-serum/anchor";
 import { bs58 } from '@project-serum/anchor/dist/cjs/utils/bytes';
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { clusterApiUrl, Connection, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from '@solana/web3.js';
+import { clusterApiUrl, Connection, Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction } from '@solana/web3.js';
 import { BslSwap } from "../target/types/bsl_swap";
 import idl from '../target/idl/bsl_swap.json'
 
 const programId = new PublicKey('2kK95sc8qHyHQbyEHADvxC3uwB2kvLLajuqajh1cF27R')
 
-
+// this test tests on devnet, not local cluster
+// private keys of offeror and offeree
+const offerorPrivateKey = ''
+const offereePrivateKey = ''
 
 class OfferorWallet {
   public publicKey: PublicKey
@@ -30,7 +33,6 @@ class OfferorWallet {
 }
 
 describe("bsl-swap", () => {
-  // Configure the client to use the local cluster.
   const offeror = Keypair.fromSecretKey(bs58.decode(offerorPrivateKey))
   const offerorWallet = new OfferorWallet(offeror)
   const offeree = Keypair.fromSecretKey(bs58.decode(offereePrivateKey))
@@ -81,99 +83,119 @@ describe("bsl-swap", () => {
     }
   }
 
-  it("can initiate and cancel swap", async () => {
-    try {
-      const {
-        offerorPdaState,
-        offerorPdaBump,
-        offereePdaState,
-        offereePdaBump,
-        mintAssetA,
-        mintAssetB,
-        ataOfferorAssetA,
-        ataOfferorAssetB,
-        ataOffereeAssetA,
-        ataOffereeAssetB,
-        swapState,
-        swapBump,
-        escrowState,
-        escrowBump
-      } = await prepareForTest()
+  it("can initiate, cancel and accept swap", async () => {
+    const {
+      offerorPdaState,
+      offerorPdaBump,
+      offereePdaState,
+      offereePdaBump,
+      mintAssetA,
+      mintAssetB,
+      ataOfferorAssetA,
+      ataOfferorAssetB,
+      ataOffereeAssetA,
+      ataOffereeAssetB,
+      swapState,
+      swapBump,
+      escrowState,
+      escrowBump
+    } = await prepareForTest()
 
-      const logUsersState = async () => {
-        const [offerorInitialized, offereeInitialized] = await Promise.all([
-          program.account.userState.fetch(offerorPdaState),
-          program.account.userState.fetch(offereePdaState)
-        ])
-        console.log(offerorInitialized)
-        console.log(offereeInitialized)
-      }
-  
-      try {
-        await program.methods.initializeUserState(offerorPdaBump)
+    const logUsersState = async () => {
+      const [offerorInitialized, offereeInitialized] = await Promise.all([
+        program.account.userState.fetch(offerorPdaState),
+        program.account.userState.fetch(offereePdaState)
+      ])
+      console.log(offerorInitialized)
+      console.log(offereeInitialized)
+    }
+
+    try {
+      await program.methods.initializeUserState(offerorPdaBump)
+      .accounts({
+        userState: offerorPdaState,
+        user: offeror.publicKey
+      })
+      .signers([offeror])
+      .rpc()
+    } catch (error) {
+      console.log(`User ${offeror.publicKey.toString()} already initialized`)
+    }
+    try {
+      await program.methods.initializeUserState(offereePdaBump)
+      .accounts({
+        userState: offereePdaState,
+        user: offeree.publicKey
+      })
+      .signers([offeree])
+      .rpc()
+    } catch (error) {
+      console.log(`User ${offeree.publicKey.toString()} already initialized`)
+    }
+
+    try {
+      await program.methods.initializeSwapState(swapBump, escrowBump)
         .accounts({
-          userState: offerorPdaState,
-          user: offeror.publicKey
+          swapState,
+          escrow: escrowState,
+          mintAssetA,
+          offeror: offeror.publicKey,
+          offeree: offeree.publicKey,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          rent: SYSVAR_RENT_PUBKEY
         })
         .signers([offeror])
         .rpc()
-      } catch (error) {
-        console.log(`User ${offeror.publicKey.toString()} already initialized`)
-      }
-      try {
-        await program.methods.initializeUserState(offereePdaBump)
-        .accounts({
-          userState: offereePdaState,
-          user: offeree.publicKey
-        })
-        .signers([offeree])
-        .rpc()
-      } catch (error) {
-        console.log(`User ${offeree.publicKey.toString()} already initialized`)
-      }
+    } catch (error) {
+      console.log('Swap state already initialized')
+    }
 
-      try {
-        await program.methods.initializeSwapState(swapBump, escrowBump)
-          .accounts({
-            swapState,
-            escrow: escrowState,
-            mintAssetA,
-            offeror: offeror.publicKey,
-            offeree: offeree.publicKey,
-            systemProgram: SystemProgram.programId,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            rent: SYSVAR_RENT_PUBKEY
-          })
-          .signers([offeror])
-          .rpc()
-      } catch (error) {
-        console.log('Swap state already initialized')
-      }
+    const initiateSwapTxn = await program.methods.initiateSwap()
+      .accounts({
+        swapState,
+        escrow: escrowState,
+        mintAssetA,
+        offeror: offeror.publicKey,
+        offeree: offeree.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
 
-      // const initiateSwapTxn = await program.methods.initiateSwap()
-      //   .accounts({
-      //     swapState,
-      //     escrow: escrowState,
-      //     mintAssetA,
-      //     offeror: offeror.publicKey,
-      //     offeree: offeree.publicKey,
-      //     tokenProgram: TOKEN_PROGRAM_ID,
+        mintAssetB,
+        ataOfferorAssetA,
+        offerorState: offerorPdaState,
+        offereeState: offereePdaState
+      })
+      .signers([offeror])
+      .rpc()
+    console.log(`sent asset A from offeror to escrow: ${initiateSwapTxn}`)
+    await logUsersState()
+    const swapStateInitialized = await program.account.swapState.fetch(swapState)
+    console.log(swapStateInitialized)
+    console.log(`Escrow: ${swapStateInitialized.escrow.toString()}`)
+    console.log(`Offeror: ${swapStateInitialized.offeror.toString()}`)
 
-      //     mintAssetB,
-      //     ataOfferorAssetA,
-      //     offerorState: offerorPdaState,
-      //     offereeState: offereePdaState
-      //   })
-      //   .signers([offeror])
-      //   .rpc()
-      // console.log(`sent asset A from offeror to escrow: ${initiateSwapTxn}`)
-      await logUsersState()
-      const swapStateInitialized = await program.account.swapState.fetch(swapState)
-      console.log(swapStateInitialized)
-      console.log(`Escrow: ${swapStateInitialized.escrow.toString()}`)
-      console.log(`Offeror: ${swapStateInitialized.offeror.toString()}`)
+    await program.methods.cancelSwap()
+      .accounts({
+        swapState,
+        escrow: escrowState,
+        mintAssetA,
+        offeror: offeror.publicKey,
+        offeree: offeree.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
 
-      await program.methods.cancelSwap()
+        mintAssetB,
+        ataOfferorAssetA,
+        offerorState: offerorPdaState,
+        offereeState: offereePdaState
+      })
+      .signers([offeror])
+      .rpc()
+    console.log('Canceled swap')
+    await logUsersState()
+
+    const transaction = new Transaction()
+    transaction.add(
+      await program.methods.acceptSwapOne()
         .accounts({
           swapState,
           escrow: escrowState,
@@ -183,17 +205,32 @@ describe("bsl-swap", () => {
           tokenProgram: TOKEN_PROGRAM_ID,
 
           mintAssetB,
-          ataOfferorAssetA,
           offerorState: offerorPdaState,
-          offereeState: offereePdaState
+          offereeState: offereePdaState,
+          ataOffereeAssetA
         })
-        .signers([offeror])
-        .rpc()
-      console.log('Canceled swap')
-      await logUsersState()
+        .instruction()
+    )
+    transaction.add(
+      await program.methods.acceptSwapTwo()
+        .accounts({
+          swapState,
+          escrow: escrowState,
+          mintAssetA,
+          offeror: offeror.publicKey,
+          offeree: offeree.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
 
-    } catch (error) {
-      console.error(error)
-    }
+          mintAssetB,
+          ataOffereeAssetB,
+          ataOfferorAssetB
+        })
+        .instruction()
+    )
+
+    const txn = await sendAndConfirmTransaction(connection, transaction, [offeree])
+    console.log(`Accepted swap: ${txn}`)
+    await logUsersState()
+
   });
 });

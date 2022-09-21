@@ -84,7 +84,10 @@ pub mod bsl_swap {
         Ok(())
     }
 
-    pub fn accept_swap(ctx: Context<AcceptSwap>) -> Result<()> {
+    // accept_swap_one and accept_swap_two should run in a single transaction
+    // had to split one instruction into two due to Anchor limiting number of accounts in context
+    // send from escrow to offeree
+    pub fn accept_swap_one(ctx: Context<AcceptSwapOne>) -> Result<()> {
         let bump_vector = &[ctx.accounts.swap_state.swap_state_bump][..];
         let inner = vec![
             b"swap_state".as_ref(),
@@ -107,6 +110,18 @@ pub mod bsl_swap {
 
         anchor_spl::token::transfer(cpi_ctx, 1)?;
 
+        let offeror_state = &mut ctx.accounts.offeror_state;
+        let offeree_state = &mut ctx.accounts.offeree_state;
+        offeror_state.user_enum = UserEnum::None.to_code();
+        offeree_state.user_enum = UserEnum::None.to_code();
+
+        Ok(())
+    }
+
+    // accept_swap_one and accept_swap_two should run in a single transaction
+    // had to split one instruction into two due to Anchor limiting number of accounts in context
+    // send from offeree to offeror
+    pub fn accept_swap_two(ctx: Context<AcceptSwapTwo>) -> Result<()> {
         let transfer_instruction = Transfer{
             from: ctx.accounts.ata_offeree_asset_b.to_account_info(),
             to: ctx.accounts.ata_offeror_asset_b.to_account_info(),
@@ -118,11 +133,6 @@ pub mod bsl_swap {
         );
 
         anchor_spl::token::transfer(cpi_ctx, 1)?;
-        
-        let offeror_state = &mut ctx.accounts.offeror_state;
-        let offeree_state = &mut ctx.accounts.offeree_state;
-        offeror_state.user_enum = UserEnum::None.to_code();
-        offeree_state.user_enum = UserEnum::None.to_code();
 
         Ok(())
     }
@@ -273,7 +283,7 @@ pub struct CancelSwap<'info> {
 }
 
 #[derive(Accounts)]
-pub struct AcceptSwap<'info> {
+pub struct AcceptSwapOne<'info> {
     // PDAs
     #[account(
         seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
@@ -285,6 +295,7 @@ pub struct AcceptSwap<'info> {
     )]
     swap_state: Account<'info, SwapState>,
     #[account(
+        mut,
         seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
         bump = swap_state.escrow_bump,
     )]
@@ -305,6 +316,42 @@ pub struct AcceptSwap<'info> {
     mint_asset_a: Account<'info, Mint>,
     mint_asset_b: Account<'info, Mint>,
 
+    /// CHECK: not reading or writing to this account
+    offeror: AccountInfo<'info>,
+    /// CHECK: not reading or writing to this account
+    offeree: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        constraint=ata_offeree_asset_a.owner == offeree.key(),
+        constraint=ata_offeree_asset_a.mint == mint_asset_a.key()
+    )]
+    ata_offeree_asset_a: Account<'info, TokenAccount>,
+
+    token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct AcceptSwapTwo<'info> {
+    // PDAs
+    #[account(
+        seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        bump = swap_state.swap_state_bump,
+        has_one = offeror,
+        has_one = offeree,
+        has_one = mint_asset_a,
+        has_one = mint_asset_b,
+    )]
+    swap_state: Account<'info, SwapState>,
+    #[account(
+        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        bump = swap_state.escrow_bump,
+    )]
+    escrow: Account<'info, TokenAccount>,
+
+    mint_asset_a: Account<'info, Mint>,
+    mint_asset_b: Account<'info, Mint>,
+
     /// CHECK: only adding tokens to this account
     #[account(mut)]
     offeror: AccountInfo<'info>,
@@ -312,22 +359,10 @@ pub struct AcceptSwap<'info> {
 
     #[account(
         mut,
-        constraint=ata_offeror_asset_a.owner == offeror.key(),
-        constraint=ata_offeror_asset_a.mint == mint_asset_a.key()
-    )]
-    ata_offeror_asset_a: Account<'info, TokenAccount>,
-    #[account(
-        mut,
         constraint=ata_offeror_asset_b.owner == offeror.key(),
         constraint=ata_offeror_asset_b.mint == mint_asset_b.key()
     )]
     ata_offeror_asset_b: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        constraint=ata_offeree_asset_a.owner == offeree.key(),
-        constraint=ata_offeree_asset_a.mint == mint_asset_a.key()
-    )]
-    ata_offeree_asset_a: Account<'info, TokenAccount>,
     #[account(
         mut,
         constraint=ata_offeree_asset_b.owner == offeree.key(),
