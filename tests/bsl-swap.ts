@@ -6,7 +6,7 @@ import { clusterApiUrl, Connection, Keypair, PublicKey, sendAndConfirmTransactio
 import { BslSwap } from "../target/types/bsl_swap";
 import idl from '../target/idl/bsl_swap.json'
 
-const programId = new PublicKey('2kK95sc8qHyHQbyEHADvxC3uwB2kvLLajuqajh1cF27R')
+const programId = new PublicKey('EMxA8GoXaq4hQho3HeJNS2xLRwu5oesQXKF9BpskBA9m')
 
 // this test tests on devnet, not local cluster
 // private keys of offeror and offeree
@@ -114,7 +114,8 @@ describe("bsl-swap", () => {
       await program.methods.initializeUserState(offerorPdaBump)
       .accounts({
         userState: offerorPdaState,
-        user: offeror.publicKey
+        user: offeror.publicKey,
+        userSeed: offeror.publicKey
       })
       .signers([offeror])
       .rpc()
@@ -125,9 +126,10 @@ describe("bsl-swap", () => {
       await program.methods.initializeUserState(offereePdaBump)
       .accounts({
         userState: offereePdaState,
-        user: offeree.publicKey
+        user: offeror.publicKey,
+        userSeed: offeree.publicKey
       })
-      .signers([offeree])
+      .signers([offeror])
       .rpc()
     } catch (error) {
       console.log(`User ${offeree.publicKey.toString()} already initialized`)
@@ -174,24 +176,24 @@ describe("bsl-swap", () => {
     console.log(`Escrow: ${swapStateInitialized.escrow.toString()}`)
     console.log(`Offeror: ${swapStateInitialized.offeror.toString()}`)
 
-    await program.methods.cancelSwap()
-      .accounts({
-        swapState,
-        escrow: escrowState,
-        mintAssetA,
-        offeror: offeror.publicKey,
-        offeree: offeree.publicKey,
-        tokenProgram: TOKEN_PROGRAM_ID,
+    // await program.methods.cancelSwap()
+    //   .accounts({
+    //     swapState,
+    //     escrow: escrowState,
+    //     mintAssetA,
+    //     offeror: offeror.publicKey,
+    //     offeree: offeree.publicKey,
+    //     tokenProgram: TOKEN_PROGRAM_ID,
 
-        mintAssetB,
-        ataOfferorAssetA,
-        offerorState: offerorPdaState,
-        offereeState: offereePdaState
-      })
-      .signers([offeror])
-      .rpc()
-    console.log('Canceled swap')
-    await logUsersState()
+    //     mintAssetB,
+    //     ataOfferorAssetA,
+    //     offerorState: offerorPdaState,
+    //     offereeState: offereePdaState
+    //   })
+    //   .signers([offeror])
+    //   .rpc()
+    // console.log('Canceled swap')
+    // await logUsersState()
 
     const transaction = new Transaction()
     transaction.add(

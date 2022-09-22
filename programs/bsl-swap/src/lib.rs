@@ -144,12 +144,14 @@ pub struct InitializeUserState<'info> {
         init,
         space = 500,
         payer = user,
-        seeds=[b"user_state".as_ref(), user.key().as_ref()],
+        seeds=[b"user_state".as_ref(), user_seed.key().as_ref()],
         bump,
     )]
     user_state: Account<'info, UserState>,
     #[account(mut)]
     user: Signer<'info>,
+    /// CHECK: not reading or writing to this account
+    user_seed: AccountInfo<'info>,
     system_program: Program<'info, System>,
 }
 
