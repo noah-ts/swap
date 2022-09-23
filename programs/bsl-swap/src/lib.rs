@@ -1,7 +1,7 @@
 pub mod state;
 
 use anchor_lang::prelude::*;
-use anchor_spl::{token::{Mint, Token, TokenAccount, Transfer}};
+use anchor_spl::{token::{Mint, Token, TokenAccount, Transfer, CloseAccount}};
 use state::{UserState, SwapState, UserEnum};
 
 declare_id!("EMxA8GoXaq4hQho3HeJNS2xLRwu5oesQXKF9BpskBA9m");
@@ -16,9 +16,14 @@ pub mod bsl_swap {
         Ok(())
     }
 
-    pub fn initialize_swap_state(ctx: Context<InitializeSwapState>, swap_state_bump: u8, escrow_bump: u8) -> Result<()> {
+    pub fn initialize_swap_state(ctx: Context<InitializeSwapState>, swap_state_bump: u8) -> Result<()> {
         let state = &mut ctx.accounts.swap_state;
         state.swap_state_bump = swap_state_bump;
+        Ok(())
+    }
+
+    pub fn initialize_escrow(ctx: Context<InitializeEscrow>, escrow_bump: u8) -> Result<()> {
+        let state = &mut ctx.accounts.swap_state;
         state.escrow_bump = escrow_bump;
         Ok(())
     }
@@ -76,6 +81,28 @@ pub mod bsl_swap {
 
         anchor_spl::token::transfer(cpi_ctx, 1)?;
 
+        // Use the `reload()` function on an account to reload it's state. Since we performed the
+        // transfer, we are expecting the `amount` field to have changed.
+        let should_close = {
+            ctx.accounts.escrow.reload()?;
+            ctx.accounts.escrow.amount == 0
+        };
+
+        // If token account has no more tokens, it should be wiped out since it has no other use case.
+        if should_close {
+            let ca = CloseAccount{
+                account: ctx.accounts.escrow.to_account_info(),
+                destination: ctx.accounts.offeror.to_account_info(),
+                authority: ctx.accounts.swap_state.to_account_info(),
+            };
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                ca,
+                outer.as_slice(),
+            );
+            anchor_spl::token::close_account(cpi_ctx)?;
+        }
+
         let offeror_state = &mut ctx.accounts.offeror_state;
         let offeree_state = &mut ctx.accounts.offeree_state;
         offeror_state.user_enum = UserEnum::None.to_code();
@@ -85,7 +112,7 @@ pub mod bsl_swap {
     }
 
     // accept_swap_one and accept_swap_two should run in a single transaction
-    // had to split one instruction into two due to Anchor limiting number of accounts in context
+    // had to split one instruction into two due to Anchor limiting to 10 accounts in context
     // send from escrow to offeree
     pub fn accept_swap_one(ctx: Context<AcceptSwapOne>) -> Result<()> {
         let bump_vector = &[ctx.accounts.swap_state.swap_state_bump][..];
@@ -110,6 +137,28 @@ pub mod bsl_swap {
 
         anchor_spl::token::transfer(cpi_ctx, 1)?;
 
+        // Use the `reload()` function on an account to reload it's state. Since we performed the
+        // transfer, we are expecting the `amount` field to have changed.
+        let should_close = {
+            ctx.accounts.escrow.reload()?;
+            ctx.accounts.escrow.amount == 0
+        };
+
+        // If token account has no more tokens, it should be wiped out since it has no other use case.
+        if should_close {
+            let ca = CloseAccount{
+                account: ctx.accounts.escrow.to_account_info(),
+                destination: ctx.accounts.offeror.to_account_info(),
+                authority: ctx.accounts.swap_state.to_account_info(),
+            };
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                ca,
+                outer.as_slice(),
+            );
+            anchor_spl::token::close_account(cpi_ctx)?;
+        }
+
         let offeror_state = &mut ctx.accounts.offeror_state;
         let offeree_state = &mut ctx.accounts.offeree_state;
         offeror_state.user_enum = UserEnum::None.to_code();
@@ -119,7 +168,7 @@ pub mod bsl_swap {
     }
 
     // accept_swap_one and accept_swap_two should run in a single transaction
-    // had to split one instruction into two due to Anchor limiting number of accounts in context
+    // had to split one instruction into two due to Anchor limiting to 10 accounts in context
     // send from offeree to offeror
     pub fn accept_swap_two(ctx: Context<AcceptSwapTwo>) -> Result<()> {
         let transfer_instruction = Transfer{
@@ -166,10 +215,30 @@ pub struct InitializeSwapState<'info> {
         bump,
     )]
     swap_state: Account<'info, SwapState>,
+
+    #[account(mut)]
+    offeror: Signer<'info>,
+    /// CHECK: not reading or writing to this account 
+    offeree: AccountInfo<'info>,
+
+    system_program: Program<'info, System>,
+    token_program: Program<'info, Token>,
+    rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeEscrow<'info> {
+    // PDAs
+    #[account(
+        mut,
+        seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        bump = swap_state.swap_state_bump,
+    )]
+    swap_state: Account<'info, SwapState>,
     #[account(
         init,
         payer = offeror,
-        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), mint_asset_a.key().as_ref()],
         bump,
         token::mint=mint_asset_a,
         token::authority=swap_state,
@@ -199,7 +268,7 @@ pub struct InitiateSwap<'info> {
     swap_state: Account<'info, SwapState>,
     #[account(
         mut,
-        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), mint_asset_a.key().as_ref()],
         bump = swap_state.escrow_bump,
     )]
     escrow: Account<'info, TokenAccount>,
@@ -249,7 +318,7 @@ pub struct CancelSwap<'info> {
     swap_state: Account<'info, SwapState>,
     #[account(
         mut,
-        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), mint_asset_a.key().as_ref()],
         bump = swap_state.escrow_bump,
     )]
     escrow: Account<'info, TokenAccount>,
@@ -298,7 +367,7 @@ pub struct AcceptSwapOne<'info> {
     swap_state: Account<'info, SwapState>,
     #[account(
         mut,
-        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), mint_asset_a.key().as_ref()],
         bump = swap_state.escrow_bump,
     )]
     escrow: Account<'info, TokenAccount>,
@@ -345,11 +414,6 @@ pub struct AcceptSwapTwo<'info> {
         has_one = mint_asset_b,
     )]
     swap_state: Account<'info, SwapState>,
-    #[account(
-        seeds=[b"escrow".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
-        bump = swap_state.escrow_bump,
-    )]
-    escrow: Account<'info, TokenAccount>,
 
     mint_asset_a: Account<'info, Mint>,
     mint_asset_b: Account<'info, Mint>,
