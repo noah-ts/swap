@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{token::{Mint, Token, TokenAccount, Transfer, CloseAccount}};
 use state::{UserState, SwapState, UserEnum};
 
-declare_id!("EMxA8GoXaq4hQho3HeJNS2xLRwu5oesQXKF9BpskBA9m");
+declare_id!("BtUAJPzuyRQddsr6D8KV1MXDBS6iev6e2J1doExiLRQf");
 
 #[program]
 pub mod bsl_swap {
