@@ -191,7 +191,7 @@ pub mod bsl_swap {
 pub struct InitializeUserState<'info> {
     #[account(
         init,
-        space = 500,
+        space = 50,
         payer = user,
         seeds=[b"user_state".as_ref(), user_seed.key().as_ref()],
         bump,
@@ -209,7 +209,7 @@ pub struct InitializeSwapState<'info> {
     // PDAs
     #[account(
         init,
-        space = 1000,
+        space = 200,
         payer = offeror,
         seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
         bump,
