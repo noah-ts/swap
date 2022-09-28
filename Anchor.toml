@@ -2,7 +2,7 @@
 seeds = false
 skip-lint = false
 [programs.mainnet]
-bsl_swap = "BtUAJPzuyRQddsr6D8KV1MXDBS6iev6e2J1doExiLRQf"
+bsl_swap = "FLjoHCAmjojgt7DUxid7WR9EyEj2Pysq9cMehRiM5vtp"
 
 [registry]
 url = "https://api.apr.dev"
