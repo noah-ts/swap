@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-// State instance for each User
+// User State instance for each User
 #[account]
 pub struct UserState {
     pub user_enum: u8,
@@ -8,16 +8,24 @@ pub struct UserState {
     pub bump: u8,
 }
 
-// State instance for each Swap
+// Swap State instance for each Swap
 #[account]
 pub struct SwapState {
     pub offeror: Pubkey,
     pub offeree: Pubkey,
-    pub mint_asset_a: Pubkey,
-    pub mint_asset_b: Pubkey,
-    pub escrow: Pubkey,
     pub swap_state_bump: u8,
-    pub escrow_bump: u8,
+    pub mints_offeror: Vec<Pubkey>,
+    pub mints_offeree: Vec<Pubkey>,
+}
+
+// Escrow State instance for each NFT to be sent from offeror to offeree
+#[account]
+pub struct EscrowState {
+    pub escrow: Pubkey,
+    pub mint: Pubkey,
+    pub ata_offeror: Pubkey,
+    pub state_bump: u8,
+    pub ata_bump: u8,
 }
 
 
@@ -53,8 +61,38 @@ impl UserEnum {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum CloseEscrowEnum {
+    // user who is making an offer
+    Cancel,
+    // user to whom is offer being made
+    Accept,
+}
+
+impl CloseEscrowEnum {
+    pub fn to_code(&self) -> u8 {
+        match self {
+            CloseEscrowEnum::Cancel => 1,
+            CloseEscrowEnum::Accept => 2,
+        }
+    }
+
+    pub fn from(val: u8) -> std::result::Result<CloseEscrowEnum, anchor_lang::error::Error> {
+        match val {
+            1 => Ok(CloseEscrowEnum::Cancel),
+            2 => Ok(CloseEscrowEnum::Accept),
+            unknown_value => {
+                msg!("Unknown stage: {}", unknown_value);
+                return err!(ErrorCode::CloseEscrowEnumInvalid)
+            }
+        }
+    }
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("User is invalid, has to be offeror or offeree")]
-    UserEnumInvalid
+    UserEnumInvalid,
+    #[msg("Close escrow type is invalid, has to be cancel or accept")]
+    CloseEscrowEnumInvalid
 }

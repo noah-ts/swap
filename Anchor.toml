@@ -1,14 +1,14 @@
 [features]
 seeds = false
 skip-lint = false
-[programs.devnet]
+[programs.mainnet]
 bsl_swap = "BtUAJPzuyRQddsr6D8KV1MXDBS6iev6e2J1doExiLRQf"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "mainnet"
 wallet = "/Users/noyan/.config/solana/id.json"
 
 [scripts]
