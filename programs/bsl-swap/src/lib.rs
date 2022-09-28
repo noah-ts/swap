@@ -299,6 +299,8 @@ pub struct CloseEscrow<'info> {
         mut,
         seeds=[b"escrow_state".as_ref(), offeror.key().as_ref(), mint.key().as_ref()],
         bump = escrow_state.state_bump,
+        has_one = escrow,
+        has_one = mint,
     )]
     escrow_state: Account<'info, EscrowState>,
     #[account(
@@ -354,8 +356,6 @@ pub struct CancelSwap<'info> {
     offeror: Signer<'info>,
     /// CHECK: not reading or writing to this account 
     offeree: AccountInfo<'info>,
-
-    token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -381,15 +381,10 @@ pub struct AcceptSwap<'info> {
     )]
     offeree_state: Account<'info, UserState>,
 
-    mint_asset_a: Account<'info, Mint>,
-    mint_asset_b: Account<'info, Mint>,
-
     /// CHECK: not reading or writing to this account
     offeror: AccountInfo<'info>,
     /// CHECK: not reading or writing to this account
     offeree: AccountInfo<'info>,
-
-    token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
