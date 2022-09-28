@@ -22,13 +22,17 @@ pub mod bsl_swap {
         Ok(())
     }
 
-    // initializes escrow state, ata and transfers nft from offeror to escrow
-    pub fn initialize_escrow(ctx: Context<InitializeEscrow>, state_bump: u8, ata_bump: u8) -> Result<()> {
+    pub fn initialize_escrow_state(ctx: Context<InitializeEscrowState>, bump: u8) -> Result<()> {
+        let state = &mut ctx.accounts.escrow_state;
+        state.state_bump = bump;
+        Ok(())
+    }
+
+    pub fn initialize_escrow(ctx: Context<InitializeEscrow>, ata_bump: u8) -> Result<()> {
         let state = &mut ctx.accounts.escrow_state;
         state.escrow = ctx.accounts.escrow.key().clone();
         state.mint = ctx.accounts.mint.key().clone();
         state.ata_offeror = ctx.accounts.ata_offeror.key().clone();
-        state.state_bump = state_bump;
         state.ata_bump = ata_bump;
 
         let swap_state = &mut ctx.accounts.swap_state;
@@ -192,7 +196,7 @@ pub struct InitializeSwapState<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitializeEscrow<'info> {
+pub struct InitializeEscrowState<'info> {
     // PDAs
     #[account(
         mut,
@@ -206,6 +210,36 @@ pub struct InitializeEscrow<'info> {
         payer = offeror,
         seeds=[b"escrow_state".as_ref(), offeror.key().as_ref(), mint.key().as_ref()],
         bump,
+    )]
+    escrow_state: Account<'info, EscrowState>,
+
+    mint: Account<'info, Mint>,
+
+    #[account(mut)]
+    offeror: Signer<'info>,
+    /// CHECK: not reading or writing to this account 
+    offeree: AccountInfo<'info>,
+
+    system_program: Program<'info, System>,
+    token_program: Program<'info, Token>,
+    rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeEscrow<'info> {
+    // PDAs
+    #[account(
+        mut,
+        seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
+        bump = swap_state.swap_state_bump,
+    )]
+    swap_state: Account<'info, SwapState>,
+    #[account(
+        mut,
+        seeds=[b"escrow_state".as_ref(), offeror.key().as_ref(), mint.key().as_ref()],
+        bump = escrow_state.state_bump,
+        has_one = escrow,
+        has_one = mint,
     )]
     escrow_state: Account<'info, EscrowState>,
     #[account(
