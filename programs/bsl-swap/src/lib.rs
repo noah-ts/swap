@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{token::{Mint, Token, TokenAccount, Transfer, CloseAccount}};
 use state::{UserState, SwapState, EscrowState, UserEnum};
 
-declare_id!("FLjoHCAmjojgt7DUxid7WR9EyEj2Pysq9cMehRiM5vtp");
+declare_id!("4yMbW3LPK1ihgxNPHiyAkNiZKA8iWfmckVRZkA39PzPK");
 
 #[program]
 pub mod bsl_swap {
@@ -123,6 +123,10 @@ pub mod bsl_swap {
     }
 
     pub fn cancel_swap(ctx: Context<CancelSwap>) -> Result<()> {
+        let swap_state = &mut ctx.accounts.swap_state;
+        swap_state.mints_offeror = Vec::new();
+        swap_state.mints_offeree = Vec::new();
+
         let offeror_state = &mut ctx.accounts.offeror_state;
         let offeree_state = &mut ctx.accounts.offeree_state;
         offeror_state.user_enum = UserEnum::None.to_code();
@@ -132,6 +136,10 @@ pub mod bsl_swap {
     }
 
     pub fn accept_swap(ctx: Context<AcceptSwap>) -> Result<()> {
+        let swap_state = &mut ctx.accounts.swap_state;
+        swap_state.mints_offeror = Vec::new();
+        swap_state.mints_offeree = Vec::new();
+
         let offeror_state = &mut ctx.accounts.offeror_state;
         let offeree_state = &mut ctx.accounts.offeree_state;
         offeror_state.user_enum = UserEnum::None.to_code();
@@ -178,7 +186,7 @@ pub struct InitializeSwapState<'info> {
     // PDAs
     #[account(
         init,
-        space = 200,
+        space = 500,
         payer = offeror,
         seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
         bump,
@@ -199,14 +207,8 @@ pub struct InitializeSwapState<'info> {
 pub struct InitializeEscrowState<'info> {
     // PDAs
     #[account(
-        mut,
-        seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
-        bump = swap_state.swap_state_bump,
-    )]
-    swap_state: Account<'info, SwapState>,
-    #[account(
         init,
-        space = 32 * 3 + 1 + 8,
+        space = 110,
         payer = offeror,
         seeds=[b"escrow_state".as_ref(), offeror.key().as_ref(), mint.key().as_ref()],
         bump,
@@ -217,11 +219,8 @@ pub struct InitializeEscrowState<'info> {
 
     #[account(mut)]
     offeror: Signer<'info>,
-    /// CHECK: not reading or writing to this account 
-    offeree: AccountInfo<'info>,
 
     system_program: Program<'info, System>,
-    token_program: Program<'info, Token>,
     rent: Sysvar<'info, Rent>,
 }
 
@@ -238,8 +237,6 @@ pub struct InitializeEscrow<'info> {
         mut,
         seeds=[b"escrow_state".as_ref(), offeror.key().as_ref(), mint.key().as_ref()],
         bump = escrow_state.state_bump,
-        has_one = escrow,
-        has_one = mint,
     )]
     escrow_state: Account<'info, EscrowState>,
     #[account(
@@ -367,6 +364,7 @@ pub struct CloseEscrow<'info> {
 pub struct CancelSwap<'info> {
     // PDAs
     #[account(
+        mut,
         seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
         bump = swap_state.swap_state_bump,
         has_one = offeror,
@@ -396,6 +394,7 @@ pub struct CancelSwap<'info> {
 pub struct AcceptSwap<'info> {
     // PDAs
     #[account(
+        mut,
         seeds=[b"swap_state".as_ref(), offeror.key().as_ref(), offeree.key().as_ref()],
         bump = swap_state.swap_state_bump,
         has_one = offeror,

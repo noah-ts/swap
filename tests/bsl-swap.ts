@@ -6,12 +6,13 @@ import { clusterApiUrl, Connection, Keypair, PublicKey, sendAndConfirmTransactio
 import { BslSwap } from "../target/types/bsl_swap";
 import idl from '../target/idl/bsl_swap.json'
 
-const programId = new PublicKey('EMxA8GoXaq4hQho3HeJNS2xLRwu5oesQXKF9BpskBA9m')
+const programId = idl.metadata.address
 
 // this test tests on devnet, not local cluster
 // private keys of offeror and offeree
-const offerorPrivateKey = ''
-const offereePrivateKey = ''
+
+const offerorPrivateKey = '2FuSkdDv2nQ9RBdVCjCrNTnMZo4prufJ1JUK7Go2D3eN6NU8R8gZ2A6GRkEnThTWpz9HJfcHEkiFWvqGfB5GfhWE'
+const offereePrivateKey = '5T5jR82Z3z5JTq1hVqHSyogxq397tJVL2HYozYCo3CzLBHBTderH7Y1e3znmzmC1gCLtVNwqo1fcQaFyGheRqDcV'
 
 class OfferorWallet {
   public publicKey: PublicKey
@@ -37,12 +38,12 @@ describe("bsl-swap", () => {
   const offerorWallet = new OfferorWallet(offeror)
   const offeree = Keypair.fromSecretKey(bs58.decode(offereePrivateKey))
   const connection = new Connection(clusterApiUrl('devnet'))
-  const provider = new AnchorProvider(connection, offerorWallet, { preflightCommitment: 'processed' })
+  const provider = new AnchorProvider(connection, offerorWallet, { preflightCommitment: 'finalized' })
   const program = new Program(idl as any, programId, provider) as Program<BslSwap>
 
   const prepareForTest = async () => {
-    const mintAssetA = new PublicKey('GtTMuni1CE4stN5uQBRv2tcKQaQrs1Z2uDSM3fBxL2T6')
-    const mintAssetB = new PublicKey('E9kyTxayTbR9GK42Q7Ub1i4UzBmQeN6EpTaKymfAAsi6')
+    const mintAssetA = new PublicKey('E9kyTxayTbR9GK42Q7Ub1i4UzBmQeN6EpTaKymfAAsi6')
+    const mintAssetB = new PublicKey('GtTMuni1CE4stN5uQBRv2tcKQaQrs1Z2uDSM3fBxL2T6')
 
     const [offerorPdaState, offerorPdaBump] = await PublicKey.findProgramAddress(
     [anchor.utils.bytes.utf8.encode('user_state'), offeror.publicKey.toBuffer()], program.programId
@@ -53,10 +54,13 @@ describe("bsl-swap", () => {
     const [swapState, swapBump] = await PublicKey.findProgramAddress(
     [anchor.utils.bytes.utf8.encode('swap_state'), offeror.publicKey.toBuffer(), offeree.publicKey.toBuffer()], program.programId
     )
-    const [escrowState, escrowBump] = await PublicKey.findProgramAddress(
+    const [escrowState, escrowStateBump] = await PublicKey.findProgramAddress(
+      [anchor.utils.bytes.utf8.encode('escrow_state'), offeror.publicKey.toBuffer(), mintAssetA.toBuffer()], program.programId
+      )
+    const [escrowAta, escrowAtaBump] = await PublicKey.findProgramAddress(
     [anchor.utils.bytes.utf8.encode('escrow'), offeror.publicKey.toBuffer(), mintAssetA.toBuffer()], program.programId
     )
-    console.log('Found 4 PDAs')
+    console.log('Found 5 PDAs')
 
     const ataOfferorAssetA = await getAssociatedTokenAddress(mintAssetA, offeror.publicKey)
     const ataOfferorAssetB = await getAssociatedTokenAddress(mintAssetB, offeror.publicKey)
@@ -79,7 +83,9 @@ describe("bsl-swap", () => {
       swapState,
       swapBump,
       escrowState,
-      escrowBump
+      escrowStateBump,
+      escrowAta,
+      escrowAtaBump
     }
   }
 
@@ -98,7 +104,9 @@ describe("bsl-swap", () => {
       swapState,
       swapBump,
       escrowState,
-      escrowBump
+      escrowStateBump,
+      escrowAta,
+      escrowAtaBump
     } = await prepareForTest()
 
     const logUsersState = async () => {
@@ -151,13 +159,30 @@ describe("bsl-swap", () => {
       } catch (error) {
         console.log('Swap state already initialized')
       }
+
+      try {
+        await program.methods.initializeEscrowState(escrowStateBump)
+          .accounts({
+            escrowState,
+            mint: mintAssetA,
+            offeror: offeror.publicKey,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY
+          })
+          .signers([offeror])
+          .rpc()
+      } catch (error) {
+        console.log('Escrow State already initialized')
+      }
   
       try {
-        await program.methods.initializeEscrow(escrowBump)
+        await program.methods.initializeEscrow(escrowAtaBump)
           .accounts({
             swapState,
-            escrow: escrowState,
-            mintAssetA,
+            escrowState,
+            escrow: escrowAta,
+            mint: mintAssetA,
+            ataOfferor: ataOfferorAssetA,
             offeror: offeror.publicKey,
             offeree: offeree.publicKey,
             systemProgram: SystemProgram.programId,
@@ -167,20 +192,29 @@ describe("bsl-swap", () => {
           .signers([offeror])
           .rpc()
       } catch (error) {
-        console.log('Escrow already initialized')
+        console.log('Escrow ATA already initialized')
+        console.log(error)
       }
+
+      console.log('Escrow state PDA: ', escrowState.toString())
+
+      await program.methods.addMintOfferee()
+        .accounts({
+          swapState,
+          mint: mintAssetB,
+          offeror: offeror.publicKey,
+          offeree: offeree.publicKey
+        })
+        .signers([offeror])
+        .rpc()
   
       const initiateSwapTxn = await program.methods.initiateSwap()
         .accounts({
           swapState,
-          escrow: escrowState,
-          mintAssetA,
           offeror: offeror.publicKey,
           offeree: offeree.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
   
-          mintAssetB,
-          ataOfferorAssetA,
           offerorState: offerorPdaState,
           offereeState: offereePdaState
         })
@@ -190,65 +224,77 @@ describe("bsl-swap", () => {
       await logUsersState()
       const swapStateInitialized = await program.account.swapState.fetch(swapState)
       console.log(swapStateInitialized)
-      console.log(`Escrow: ${swapStateInitialized.escrow.toString()}`)
       console.log(`Offeror: ${swapStateInitialized.offeror.toString()}`)
+
+      await program.methods.closeEscrow()
+        .accounts({
+          swapState,
+          escrowState,
+          escrow: escrowAta,
+          mint: mintAssetA,
+          ata: ataOfferorAssetA,
+          offeror: offeror.publicKey,
+          offeree: offeree.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID
+        })
+        .rpc()
+      console.log('closed escrow')
+      
+      await program.methods.cancelSwap()
+        .accounts({
+          swapState,
+          offeror: offeror.publicKey,
+          offeree: offeree.publicKey,
   
-      // await program.methods.cancelSwap()
+          offerorState: offerorPdaState,
+          offereeState: offereePdaState
+        })
+        .signers([offeror])
+        .rpc()
+      console.log('Canceled swap')
+      await logUsersState()
+
+      // await program.methods.closeEscrow()
       //   .accounts({
       //     swapState,
-      //     escrow: escrowState,
-      //     mintAssetA,
+      //     escrowState,
+      //     escrow: escrowAta,
+      //     mint: mintAssetA,
+      //     ata: ataOffereeAssetA,
       //     offeror: offeror.publicKey,
       //     offeree: offeree.publicKey,
-      //     tokenProgram: TOKEN_PROGRAM_ID,
-  
-      //     mintAssetB,
-      //     ataOfferorAssetA,
-      //     offerorState: offerorPdaState,
-      //     offereeState: offereePdaState
+      //     tokenProgram: TOKEN_PROGRAM_ID
       //   })
-      //   .signers([offeror])
       //   .rpc()
-      // console.log('Canceled swap')
+      // console.log('closed escrow')
+
+      // await program.methods.transferNftFromOffereeToOfferor()
+      //   .accounts({
+      //     swapState,
+      //     mint: mintAssetB,
+      //     offeror: offeror.publicKey,
+      //     offeree: offeree.publicKey,
+      //     ataOfferor: ataOfferorAssetB,
+      //     ataOfferee: ataOffereeAssetB,
+      //     tokenProgram: TOKEN_PROGRAM_ID
+      //   })
+      //   .signers([offeree])
+      //   .rpc()
+      // console.log('transfered from offeree to offeror')
+
+      // await program.methods.acceptSwap()
+      //   .accounts({
+      //     swapState,
+      //     offerorState: offerorPdaState,
+      //     offereeState: offereePdaState,
+      //     offeror: offeror.publicKey,
+      //     offeree: offeree.publicKey
+      //   })
+      //   .rpc()
+      // console.log('accepted swap')
+  
       // await logUsersState()
-  
-      const transaction = new Transaction()
-      transaction.add(
-        await program.methods.acceptSwapOne()
-          .accounts({
-            swapState,
-            escrow: escrowState,
-            mintAssetA,
-            offeror: offeror.publicKey,
-            offeree: offeree.publicKey,
-            tokenProgram: TOKEN_PROGRAM_ID,
-  
-            mintAssetB,
-            offerorState: offerorPdaState,
-            offereeState: offereePdaState,
-            ataOffereeAssetA
-          })
-          .instruction()
-      )
-      transaction.add(
-        await program.methods.acceptSwapTwo()
-          .accounts({
-            swapState,
-            mintAssetA,
-            offeror: offeror.publicKey,
-            offeree: offeree.publicKey,
-            tokenProgram: TOKEN_PROGRAM_ID,
-  
-            mintAssetB,
-            ataOffereeAssetB,
-            ataOfferorAssetB
-          })
-          .instruction()
-      )
-  
-      const txn = await sendAndConfirmTransaction(connection, transaction, [offeree])
-      console.log(`Accepted swap: ${txn}`)
-      await logUsersState()
+      console.log(await program.account.swapState.fetch(swapState))
     } catch (error) {
       console.error(error)
     }
