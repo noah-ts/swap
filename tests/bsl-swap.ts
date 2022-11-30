@@ -11,8 +11,8 @@ const programId = idl.metadata.address
 // this test tests on devnet, not local cluster
 // private keys of offeror and offeree
 
-const offerorPrivateKey = '2FuSkdDv2nQ9RBdVCjCrNTnMZo4prufJ1JUK7Go2D3eN6NU8R8gZ2A6GRkEnThTWpz9HJfcHEkiFWvqGfB5GfhWE'
-const offereePrivateKey = '5T5jR82Z3z5JTq1hVqHSyogxq397tJVL2HYozYCo3CzLBHBTderH7Y1e3znmzmC1gCLtVNwqo1fcQaFyGheRqDcV'
+const offerorPrivateKey = ''
+const offereePrivateKey = ''
 
 class OfferorWallet {
   public publicKey: PublicKey
